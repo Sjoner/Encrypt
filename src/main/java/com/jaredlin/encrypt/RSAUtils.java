@@ -5,11 +5,13 @@ import java.security.Key;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.HashMap;
@@ -22,11 +24,12 @@ import javax.crypto.Cipher;
  */
 public class RSAUtils {
 
+    public static String TRANSFORMATION = "RSA/ECB/PKCS1Padding";
 
     /** *//**
      * 加密算法RSA
      */
-    public static final String KEY_ALGORITHM = "RSA";
+    private static final String KEY_ALGORITHM = "RSA";
 
     /** *//**
      * 签名算法
@@ -53,17 +56,16 @@ public class RSAUtils {
      */
     private static final int MAX_DECRYPT_BLOCK = 128;
 
-    /** *//**
-     * <p>
-     * 生成密钥对(公钥和私钥)
-     * </p>
-     *
+
+    /**
+     *  生成密钥对
+     * @param keySize 一般为1024或者2048
      * @return
      * @throws Exception
      */
-    public static Map<String, Key> genKeyPair() throws Exception {
+    public static Map<String, Key> genKeyPair(int keySize) throws Exception {
         KeyPairGenerator keyPairGen = KeyPairGenerator.getInstance(KEY_ALGORITHM);
-        keyPairGen.initialize(1024);
+        keyPairGen.initialize(keySize);
         KeyPair keyPair = keyPairGen.generateKeyPair();
         RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
         RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
@@ -71,6 +73,20 @@ public class RSAUtils {
         keyMap.put(PUBLIC_KEY, publicKey);
         keyMap.put(PRIVATE_KEY, privateKey);
         return keyMap;
+    }
+
+    public static PrivateKey loadPrivateKey(String privateKey) throws NoSuchAlgorithmException, InvalidKeySpecException {
+        byte[] keyBytes = Base64Utils.decode(privateKey);
+        PKCS8EncodedKeySpec pkcs8KeySpec = new PKCS8EncodedKeySpec(keyBytes);
+        KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
+        return keyFactory.generatePrivate(pkcs8KeySpec);
+    }
+
+    public static PublicKey loadPublicKey(String publicKey) throws NoSuchAlgorithmException, InvalidKeySpecException {
+        byte[] keyBytes = Base64Utils.decode(publicKey);
+        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
+        KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
+        return keyFactory.generatePublic(keySpec);
     }
 
     /** *//**
@@ -81,15 +97,13 @@ public class RSAUtils {
      * @param data 待签名数据
      * @param privateKey 私钥(BASE64编码)
      *
+     * @param algorithm
      * @return
      * @throws Exception
      */
-    public static String sign(byte[] data, String privateKey) throws Exception {
-        byte[] keyBytes = Base64Utils.decode(privateKey);
-        PKCS8EncodedKeySpec pkcs8KeySpec = new PKCS8EncodedKeySpec(keyBytes);
-        KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
-        PrivateKey privateK = keyFactory.generatePrivate(pkcs8KeySpec);
-        Signature signature = Signature.getInstance(SIGNATURE_ALGORITHM);
+    public static String sign(byte[] data, String privateKey, String algorithm) throws Exception {
+        PrivateKey privateK = loadPrivateKey(privateKey);
+        Signature signature = Signature.getInstance(algorithm);
         signature.initSign(privateK);
         signature.update(data);
         return Base64Utils.encode(signature.sign());
@@ -104,17 +118,15 @@ public class RSAUtils {
      * @param publicKey 公钥(BASE64编码)
      * @param sign 数字签名
      *
+     * @param algorithm
      * @return
      * @throws Exception
      *
      */
-    public static boolean verify(byte[] data, String publicKey, String sign)
+    public static boolean verify(byte[] data, String publicKey, String sign, String algorithm)
             throws Exception {
-        byte[] keyBytes = Base64Utils.decode(publicKey);
-        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
-        KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
-        PublicKey publicK = keyFactory.generatePublic(keySpec);
-        Signature signature = Signature.getInstance(SIGNATURE_ALGORITHM);
+        PublicKey publicK = loadPublicKey(publicKey);
+        Signature signature = Signature.getInstance(algorithm);
         signature.initVerify(publicK);
         signature.update(data);
         return signature.verify(Base64Utils.decode(sign));
@@ -132,11 +144,8 @@ public class RSAUtils {
      */
     public static byte[] decryptByPrivateKey(byte[] encryptedData, String privateKey)
             throws Exception {
-        byte[] keyBytes = Base64Utils.decode(privateKey);
-        PKCS8EncodedKeySpec pkcs8KeySpec = new PKCS8EncodedKeySpec(keyBytes);
-        KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
-        Key privateK = keyFactory.generatePrivate(pkcs8KeySpec);
-        Cipher cipher = Cipher.getInstance(keyFactory.getAlgorithm());
+        Key privateK = loadPrivateKey(privateKey);
+        Cipher cipher = Cipher.getInstance(TRANSFORMATION);
         cipher.init(Cipher.DECRYPT_MODE, privateK);
         int inputLen = encryptedData.length;
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -171,12 +180,9 @@ public class RSAUtils {
      */
     public static byte[] encryptByPublicKey(byte[] data, String publicKey)
             throws Exception {
-        byte[] keyBytes = Base64Utils.decode(publicKey);
-        X509EncodedKeySpec x509KeySpec = new X509EncodedKeySpec(keyBytes);
-        KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
-        Key publicK = keyFactory.generatePublic(x509KeySpec);
+        Key publicK = loadPublicKey(publicKey);
         // 对数据加密
-        Cipher cipher = Cipher.getInstance(keyFactory.getAlgorithm());
+        Cipher cipher = Cipher.getInstance(TRANSFORMATION);
         cipher.init(Cipher.ENCRYPT_MODE, publicK);
         int inputLen = data.length;
         ByteArrayOutputStream out = new ByteArrayOutputStream();
